@@ -168,14 +168,8 @@ Pour garantir la reproductibilité des analyses :
 ## Contributeurs
 
 - Hadrien Figadère
-- Membres de l'équipe projet
+- Florian Thollot
 - Encadrants scientifiques
-
-## Remerciements
-
-Ce projet s'inscrit dans le cadre d'un projet de recherche de troisième année d'école d'ingénieurs consacré à l'étude expérimentale des hélicoïdes isotropes et de leur comportement hydrodynamique.
-
-Le projet bénéficie des ressources expérimentales et de l'accompagnement scientifique des encadrants.
 
 ## Licence
 
