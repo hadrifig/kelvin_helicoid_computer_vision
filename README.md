@@ -17,7 +17,7 @@ L'objectif est d'étudier expérimentalement le couplage entre translation et ro
 - Extraire des mesures quantitatives et produire des visualisations.
 - Valider les résultats obtenus par vision par ordinateur à partir des observations expérimentales.
 
-## Architecture du dépôt
+## Architecture initiale du dépôt
 
 ```text
 kelvin_helicoid_computer_vision/
@@ -155,15 +155,119 @@ Pour garantir la reproductibilité des analyses :
 
 **Statut :** initialisation du dépôt et mise en place de l'environnement de développement.
 
-### Jalons prévisionnels
+# Roadmap du module Computer Vision
 
-- [ ] Configurer l'environnement Python.
-- [ ] Implémenter le chargement vidéo et l'extraction des images.
-- [ ] Développer la détection et le suivi de l'hélicoïde.
-- [ ] Estimer la trajectoire de la particule.
-- [ ] Estimer le mouvement de rotation.
-- [ ] Valider les mesures à partir des données expérimentales.
-- [ ] Documenter et rendre reproductible l'analyse finale.
+Objectif : mesurer la **trajectoire** et la **rotation** d'hélicoïdes isotropes en chute libre dans un fluide visqueux, avec une précision angulaire suffisante pour détecter le couplage translation-rotation (signal faible).
+
+Approche : **pipeline simple et validé d'abord** (monoculaire, 2D), puis complexification (3D, multi-caméras, filtrage) seulement si la précision s'avère insuffisante.
+
+## Vue d'ensemble
+
+| Phase | Contenu | Durée estimée |
+|---|---|---|
+| 1 | Setup environnement | 0,5 jour |
+| 2 | Calibration caméra | 1 jour |
+| 3 | Détection 2D | 1 jour |
+| 4 | Tracking | 1 jour |
+| 5 | Rotation (ArUco) | 2–3 jours |
+| 6 | Validation cas contrôlé | 2 jours |
+| — | **Jalon 1 : pipeline monoculaire fonctionnel** | **~2 semaines** |
+| 7 | Correction de réfraction | 2–3 jours |
+| 8 | Filtrage (Kalman) | 2 jours |
+| 9 | Stéréovision | 1 semaine |
+| 10 | Pose 3D (6 DDL) | 1 semaine |
+| 11 | Extraction du couplage | 1 semaine |
+| 12 | Documentation / livrable | 1 semaine (continu) |
+
+## Phase 1 · Mise en place (0,5 jour)
+
+- Repo Git ( branches `main` + `dev`, revue de code entre pairs).
+- Environnement Python : `opencv-python`, `numpy`, `scipy`, `matplotlib` ; environnements verrouillés ( `requirements.txt` ou `uv/pip-tools`).
+- Convention de nommage des données brutes : `data/ YYYY-MM-DD_experience / video .mp4 + metadata (json)` — la métadonnée (fluide, température, particule, fps) est indispensable pour l'analyse.
+
+**Sortie :** repo clonable, vidéo de test lisible par `cv2.VideoCapture`.
+
+## Phase 2 · Calibration caméra (1 jour)
+
+- Imprimer une mire chessboard ( `cv2.findChessboardCorners`), filmer ~20 poses couvrant tout le champ.
+- `cv2.calibrateCamera` → matrice intrinsèque (focale, centre optique) + coefficients de distorsion.
+- Conserver les paramètres en JSON versionné ( `calib/intrinsics.json`).
+
+**Sortie :** images dé-distordues via `cv2.undistort`.
+
+## Phase 3 · Détection 2D (1 jour)
+
+- Fond contrasté + éclairage diffus ; seuillage automatique d'Otsu ( `cv2.threshold`).
+- Plus grand contour : `cv2.findContours` ; centroïde : `cv2.moments`.
+- Nettoyage morphologique ( `cv2.morphologyEx`) contre le bruit et bulles.
+
+**Sortie :** positions pixel (x, y) par frame. → C'est la **trajectoire**.
+
+## Phase 4 · Tracking (1 jour)
+
+- Association du plus proche voisin entre frames (distance euclidienne + limite de déplacement).
+- Détection des frames problématiques (sortie de champ, occlusion) → log, pas de data silencieuse.
+
+**Sortie :** série temporelle propre `t, x, y` avec trous explicitement marqués.
+
+## Phase 5 · Rotation via ArUco (2–3 jours)
+
+- Coller/intégrer 2–3 **marqueurs ArUco** ( `cv2.aruco`) sur la particule — à valider avec les encadrants pour ne pas perturber l'hydrodynamique (légers, symétriques en masse).
+- Détection : `detectMarkers` → angle 2D par frame ; lever les ambiguïtés avec plusieurs marqueurs à orientations connues.
+- Ambiguïté 180° (proche de la caméra) : arbitrage par la trajectoire du centroïde.
+
+**Sortie :** angle de rotation θ(t), résolution visée ~1°.
+
+## Phase 6 · Validation cas contrôlé (2 jours)
+
+- Sphère marquée avec rotation **imposée connue** (chute ou support motorisé).
+- Comparer mesure vs vérité terrain → erreur angulaire et biais systématique.
+- Cette valeur est le critère GO/NO-GO : si erreur << rotation attendue du couplage, le design expérimental est validé.
+
+**Sortie :** note interne « précision de la chaîne de mesure = X° ».
+
+## Jalon 1 (~2 semaines)
+
+Pipeline monoculaire complet : vidéo → trajectoire + rotation. Première chute d'un hélicoïde réel possible, conclusion sur la suffisance du monoculaire.
+
+## Phase 7 · Correction de réfraction (2–3 jours)
+
+- Rayons déviés aux interfaces air/verre/fluide (Snell-Descartes) → biais de position.
+- Option simple : calibration directe dans le fluide (grille immergée) → on « apprend » la déformation plutôt que la modéliser.
+- Option propre : modèle géométrique multi-interfaces, correction par frame.
+
+## Phase 8 · Filtrage (2 jours)
+
+- Filtre de Kalman 1D par axe (position, vitesse, angle) : lissage + interpolation des trous.
+- Ne filtrer qu'**après** validation — sinon on risque d'effacer le signal faible qu'on cherche.
+
+## Phase 9 · Stéréovision (1 semaine) — si nécessaire
+
+- 2 caméras synchronisées : `stereoCalibrate` (intrinsèques + rotation/translation relatives).
+- Triangulation : `cv2.triangulatePoints` → position 3D complète.
+
+## Phase 10 · Pose 3D complète (1 semaine)
+
+- `cv2.solvePnP` sur 4+ marqueurs → attitude 3D complète de la particule.
+- Nécessaire seulement si le couplage doit être observé en 3D (couplage isotrope → toutes orientations).
+
+## Phase 11 · Extraction du couplage (1 semaine)
+
+- Régression θ(t) vs trajectoire x(t) : la pente estimate le couplage translation-rotation.
+- Quantification d'incertitudes : bootstrap sur les répétitions de chutes (n ≥ 10).
+- Comparaison aux prédictions théoriques des codes MATLAB des encadrants.
+
+## Phase 12 · Documentation & livrable (en continu)
+
+- README, docstrings, notebooks de démo reproductibles.
+- Structure du livrable 3 : `code/ + data/ traitée + figures + scripts reproductibles`.
+
+## Règles de développement
+
+1. **Simple d'abord** : aucune phase avancée avant validation de la précédente.
+2. Un module = une responsabilité (calibration, détection, tracking, reconstruction, analyse).
+3. Tout fichier de sortie est reproductible depuis les données brutes + le code versionné.
+4. Tests systématiques sur cas contrôlés avant toute donnée réelle.
 
 ## Contributeurs
 
