@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.vscode/
+results/
+video_test.mp4
+__pycache__/

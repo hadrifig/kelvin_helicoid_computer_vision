@@ -1,0 +1,31 @@
+from pathlib import Path
+
+import numpy as np
+import pytest
+from src.pipeline import process_video
+
+VIDEO = Path("data/raw/test.mp4")
+pytestmark = pytest.mark.skipif(not VIDEO.exists(), reason="data/raw/test.mp4 absent")
+
+
+@pytest.fixture(scope="module")
+def df(tmp_path_factory):
+    return process_video(VIDEO, tmp_path_factory.mktemp("res"), mode="color")
+
+
+def test_objet_suivi_uniquement_quand_visible(df):
+    assert len(df) == 33
+    suivi = df[df.status.isin(["init", "ok"])]
+    assert list(suivi.frame) == [4, 5, 6, 7, 8, 9]
+    assert df.loc[df.frame == 3, "status"].iloc[0] == "edge"     # coupé par le bord haut
+    assert df.loc[df.frame >= 11, "x"].isna().all()               # ni main ni ombre
+
+
+def test_il_tombe_de_plus_en_plus_vite(df):
+    vy = df.loc[df.status == "ok", "vy"].to_numpy()
+    assert np.all(vy > 0) and np.all(np.diff(vy) > 0)
+
+
+def test_acceleration_coherente(df):
+    ay = df.loc[df.status == "ok", "ay"].iloc[1:]   # on écarte la 1re (filtre pas convergé)
+    assert 20000 < ay.mean() < 45000                 # ordre de grandeur mesuré : ~30 000 px/s²

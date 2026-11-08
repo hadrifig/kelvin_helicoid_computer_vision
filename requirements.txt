@@ -1,0 +1,6 @@
+opencv-python>=4.8
+numpy
+scipy
+pandas
+matplotlib
+pytest
