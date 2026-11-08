@@ -6,39 +6,46 @@ Ce projet vise à développer une chaîne de traitement en vision par ordinateur
 
 L'objectif est d'étudier expérimentalement le couplage entre translation et rotation de géométries d'hélicoïdes optimisées, inspirées du concept d'hélicoïde isotrope proposé par Lord Kelvin.
 
-À partir de vidéos des expériences, nous cherchons à estimer la trajectoire, l'orientation et le mouvement de rotation des particules au cours du temps.
+À partir de vidéos des expériences, nous cherchons à estimer la trajectoire et la vitesse de chute des particules au cours du temps, puis, dans un second temps, leur orientation et leur rotation.
 
 ## Objectifs
 
-- Traiter les vidéos expérimentales des hélicoïdes en chute.
-- Détecter et suivre les hélicoïdes d'une image à l'autre.
-- Reconstruire la trajectoire 2D ou 3D des particules, selon le dispositif expérimental.
-- Estimer l'orientation et le mouvement de rotation des particules.
-- Extraire des mesures quantitatives et produire des visualisations.
-- Valider les résultats obtenus par vision par ordinateur à partir des observations expérimentales.
+- Traiter les vidéos expérimentales des objets en chute.
+- Détecter et suivre l'objet d'une image à l'autre.
+- Reconstruire la trajectoire 2D et estimer la vitesse de chute par filtre de Kalman.
+- Extraire des mesures quantitatives avec leurs incertitudes et produire des visualisations.
+- Valider la chaîne de mesure (biais, dispersion, cohérence statistique du filtre).
+- Comparer l'approche classique (détection par couleur) à une approche apprise (SAM, YOLO) sous contrainte de frugalité (latence CPU, taille du modèle).
+- *Perspective :* estimer l'orientation et la rotation des particules, puis le couplage translation-rotation (voir « Perspectives »).
 
-## Architecture initiale du dépôt
+## Architecture du dépôt
 
 ```text
 kelvin_helicoid_computer_vision/
 ├── README.md
 ├── .gitignore
 ├── requirements.txt
+├── pytest.ini
 ├── data/
-│   ├── raw/
+│   ├── raw/                          # vidéos originales (non versionnées)
 │   └── processed/
 ├── notebooks/
 │   └── exploration.ipynb
 ├── src/
-│   ├── video_processing.py
-│   ├── object_tracking.py
-│   ├── trajectory.py
-│   └── rotation.py
+│   ├── video_processing.py           # lecture vidéo, inventaire d'un dossier de vidéos
+│   ├── object_tracking.py            # détection 2D (couleur HSV ou contraste sombre)
+│   ├── kalman.py                     # filtre de Kalman à accélération constante + suivi
+│   ├── trajectory.py                 # résumés, vitesse de chute, graphiques
+│   └── pipeline.py                   # chaîne complète sur un dossier de vidéos
 ├── tests/
+│   ├── test_kalman.py
+│   └── test_real_video.py
 └── results/
-    ├── figures/
-    └── tables/
+    ├── results_video_processing/     # inventaire des vidéos (CSV)
+    └── results_pipeline/             # une analyse par vidéo + un dossier _global
 ```
+
+Modules prévus par la roadmap : `calibration.py` (phase 3), `simulation.py` et lissage RTS (phase 4), détection apprise SAM / YOLO (phase 5), `benchmark.py` pour la latence (phase 6), comparaison de trackers (phase 7).
 
 ### Rôle des dossiers
 
@@ -47,19 +54,22 @@ kelvin_helicoid_computer_vision/
 - `notebooks/` : exploration des données et essais d'algorithmes.
 - `src/` : code source de la chaîne de traitement.
 - `tests/` : tests des fonctions développées.
-- `results/figures/` : graphiques et visualisations.
-- `results/tables/` : tableaux de mesures et résultats numériques.
+- `results/results_video_processing/` : tableau d'inventaire des vidéos.
+- `results/results_pipeline/<video>/` : trajectoire, graphiques d'analyse et vidéo annotée de chaque vidéo.
+- `results/results_pipeline/_global/` : tableau récapitulatif et analyse globale de toutes les vidéos.
 
 Les vidéos brutes et les données volumineuses ne sont pas destinées à être versionnées directement sur GitHub par défaut.
 
 ## Technologies utilisées
 
 - **Python** : langage principal de développement.
-- **OpenCV** : traitement vidéo, analyse d'images et suivi d'objets.
-- **NumPy** : calcul numérique.
+- **OpenCV** : traitement vidéo, analyse d'images et détection d'objets.
+- **NumPy** : calcul numérique et filtre de Kalman.
 - **Matplotlib** : visualisation des trajectoires et des résultats.
 - **Pandas** : manipulation et analyse des données.
+- **pytest** : tests automatisés.
 - **Jupyter Notebook** : exploration interactive et prototypage.
+- *Prévus (phases 4 à 7) :* SciPy (algorithme hongrois), SAM, Ultralytics (YOLO, ByteTrack, BoT-SORT), ONNX Runtime.
 
 ## Installation
 
@@ -97,20 +107,30 @@ python -m pip install -r requirements.txt
 Si le fichier `requirements.txt` n'est pas encore renseigné, installer les bibliothèques initiales avec :
 
 ```bash
-python -m pip install opencv-python numpy matplotlib pandas jupyter
+python -m pip install opencv-python numpy pandas matplotlib pytest jupyter
 ```
+
+## Utilisation
+
+Placer les vidéos dans `data/raw/`, puis, depuis la racine du projet :
+
+```bash
+python -m src.video_processing data/raw --count-frames   # inventaire des vidéos
+python -m src.pipeline                                    # traite toutes les vidéos de data/raw
+python -m src.pipeline --no-video                         # idem, sans vidéo annotée (plus rapide)
+python -m src.pipeline --mm-per-px 0.27                   # ajoute les unités physiques (m/s, m/s²)
+python -m src.pipeline --video data/raw/test.mp4          # une seule vidéo
+python -m pytest -v                                       # tests
+```
+
+Les résultats sont écrits dans `results/results_pipeline/`.
 
 ## Fonctionnement de la chaîne de traitement
 
-Le développement sera organisé progressivement dans le dossier `src/`.
-
-1. **Traitement vidéo** : chargement des vidéos, extraction des images et prétraitement.
-2. **Détection et suivi** : localisation de l'hélicoïde et suivi de sa position au fil des images.
-3. **Reconstruction de trajectoire** : estimation de la position de la particule en fonction du temps.
-4. **Estimation de la rotation** : détermination de l'orientation et de la dynamique de rotation de l'hélicoïde.
-5. **Analyse des résultats** : production de graphiques, de tableaux et de mesures quantitatives.
-
-Les algorithmes et méthodes retenus seront précisés au fur et à mesure de l'avancement du projet.
+1. **Lecture vidéo** : chargement des vidéos d'un dossier et inventaire (cadence, résolution, nombre d'images).
+2. **Détection** : localisation de l'objet par sa couleur (plage HSV réglable) ou par contraste sombre (seuil d'Otsu). Un objet coupé par le bord de l'image est signalé et n'est pas utilisé.
+3. **Suivi par filtre de Kalman** : modèle à accélération constante, association des mesures par distance de Mahalanobis, gestion des mesures manquantes. Chaque image reçoit un statut explicite : `searching`, `edge`, `init`, `ok`, `predicted` ou `lost`.
+4. **Analyse** : positions, trajectoire, vitesse de chute, accélération, incertitudes (±2σ du filtre), résidus et NIS. Un tableau récapitulatif (`resume_videos.csv`) et une analyse globale sont produits pour l'ensemble des vidéos.
 
 ## Travail collaboratif avec Git et GitHub
 
@@ -146,128 +166,45 @@ Pour garantir la reproductibilité des analyses :
 
 - Documenter la fréquence d'acquisition vidéo et les paramètres de la caméra.
 - Préciser les méthodes de calibration et l'échelle spatiale utilisée.
-- Documenter les algorithmes, leurs paramètres et les versions des bibliothèques.
+- Documenter les algorithmes, leurs paramètres (`meas_std`, `jerk_psd`, plages HSV) et les versions des bibliothèques.
 - Enregistrer les mesures traitées dans des formats documentés, comme CSV.
 - Distinguer les données brutes, les données traitées et les résultats finaux.
+- Fixer les graines aléatoires (`seed`) des simulations.
 - Ne pas publier de données volumineuses ou confidentielles sans autorisation.
 
 ## État d'avancement
 
-**Statut :** initialisation du dépôt et mise en place de l'environnement de développement.
+**Statut :** chaîne de traitement de base fonctionnelle (détection par couleur, filtre de Kalman, analyse par vidéo et globale), testée sur une vidéo de test. L'acquisition des 20 vidéos expérimentales est la prochaine étape.
+
+- [x] Lecture vidéo et inventaire d'un dossier
+- [x] Détection 2D par couleur (HSV)
+- [x] Filtre de Kalman à accélération constante, avec incertitudes (σ) et NIS
+- [x] Pipeline par lot, analyse par vidéo et analyse globale
+- [x] Tests automatisés (filtre, vidéo de test, dossier)
+- [ ] Phases 1 à 7 de la roadmap ci-dessous
 
 # Roadmap du module Computer Vision
 
-Objectif : mesurer la **trajectoire** et la **rotation** d'hélicoïdes isotropes en chute libre dans un fluide visqueux, avec une précision angulaire suffisante pour détecter le couplage translation-rotation (signal faible).
+Objectif : mesurer la **trajectoire** et la **vitesse de chute** d'objets en chute par vision par ordinateur, **valider la chaîne de mesure par des chiffres** (biais, dispersion, cohérence du filtre), puis comparer l'approche classique à une approche apprise sous contrainte de frugalité.
 
-Approche : **pipeline simple et validé d'abord** (monoculaire, 2D), puis complexification (3D, multi-caméras, filtrage) seulement si la précision s'avère insuffisante.
+Approche : **pipeline simple et validé d'abord** (monoculaire, 2D), puis complexification seulement si les résultats l'exigent.
 
 ## Vue d'ensemble
 
-| Phase | Contenu | Durée estimée |
+| Phase | Contenu
 |---|---|---|
-| 1 | Setup environnement | 0,5 jour |
-| 2 | Calibration caméra | 1 jour |
-| 3 | Détection 2D | 1 jour |
-| 4 | Tracking | 1 jour |
-| 5 | Rotation (ArUco) | 2–3 jours |
-| 6 | Validation cas contrôlé | 2 jours |
-| — | **Jalon 1 : pipeline monoculaire fonctionnel** | **~2 semaines** |
-| 7 | Correction de réfraction | 2–3 jours |
-| 8 | Filtrage (Kalman) | 2 jours |
-| 9 | Stéréovision | 1 semaine |
-| 10 | Pose 3D (6 DDL) | 1 semaine |
-| 11 | Extraction du couplage | 1 semaine |
-| 12 | Documentation / livrable | 1 semaine (continu) |
+| 1 | Protocole et acquisition
+| 2 | Évaluer le filtre de Kalman initial
+| 3 | Calibration et échelle
+| 4 | Filtre rigoureux : RTS, NIS, Monte Carlo, hongrois
+| 5 | Détection apprise : SAM puis YOLO
+| 6 | Frugalité : latence CPU, taille du modèle
+| 7 | Comparaison de trackers
 
-## Phase 1 · Mise en place (0,5 jour)
+Jalons :
+- **Jalon 1 (après la phase 4)** : chaîne de mesure validée et chiffrée (accélération mesurée avec son incertitude, filtre statistiquement cohérent).
+- **Jalon 2 (après la phase 7)** : comparaison approche classique / approche apprise / trackers, avec précision, latence et taille de modèle.
 
-- Repo Git ( branches `main` + `dev`, revue de code entre pairs).
-- Environnement Python : `opencv-python`, `numpy`, `scipy`, `matplotlib` ; environnements verrouillés ( `requirements.txt` ou `uv/pip-tools`).
-- Convention de nommage des données brutes : `data/ YYYY-MM-DD_experience / video .mp4 + metadata (json)` — la métadonnée (fluide, température, particule, fps) est indispensable pour l'analyse.
-
-**Sortie :** repo clonable, vidéo de test lisible par `cv2.VideoCapture`.
-
-## Phase 2 · Calibration caméra (1 jour)
-
-- Imprimer une mire chessboard ( `cv2.findChessboardCorners`), filmer ~20 poses couvrant tout le champ.
-- `cv2.calibrateCamera` → matrice intrinsèque (focale, centre optique) + coefficients de distorsion.
-- Conserver les paramètres en JSON versionné ( `calib/intrinsics.json`).
-
-**Sortie :** images dé-distordues via `cv2.undistort`.
-
-## Phase 3 · Détection 2D (1 jour)
-
-- Fond contrasté + éclairage diffus ; seuillage automatique d'Otsu ( `cv2.threshold`).
-- Plus grand contour : `cv2.findContours` ; centroïde : `cv2.moments`.
-- Nettoyage morphologique ( `cv2.morphologyEx`) contre le bruit et bulles.
-
-**Sortie :** positions pixel (x, y) par frame. → C'est la **trajectoire**.
-
-## Phase 4 · Tracking (1 jour)
-
-- Association du plus proche voisin entre frames (distance euclidienne + limite de déplacement).
-- Détection des frames problématiques (sortie de champ, occlusion) → log, pas de data silencieuse.
-
-**Sortie :** série temporelle propre `t, x, y` avec trous explicitement marqués.
-
-## Phase 5 · Rotation via ArUco (2–3 jours)
-
-- Coller/intégrer 2–3 **marqueurs ArUco** ( `cv2.aruco`) sur la particule — à valider avec les encadrants pour ne pas perturber l'hydrodynamique (légers, symétriques en masse).
-- Détection : `detectMarkers` → angle 2D par frame ; lever les ambiguïtés avec plusieurs marqueurs à orientations connues.
-- Ambiguïté 180° (proche de la caméra) : arbitrage par la trajectoire du centroïde.
-
-**Sortie :** angle de rotation θ(t), résolution visée ~1°.
-
-## Phase 6 · Validation cas contrôlé (2 jours)
-
-- Sphère marquée avec rotation **imposée connue** (chute ou support motorisé).
-- Comparer mesure vs vérité terrain → erreur angulaire et biais systématique.
-- Cette valeur est le critère GO/NO-GO : si erreur << rotation attendue du couplage, le design expérimental est validé.
-
-**Sortie :** note interne « précision de la chaîne de mesure = X° ».
-
-## Jalon 1 (~2 semaines)
-
-Pipeline monoculaire complet : vidéo → trajectoire + rotation. Première chute d'un hélicoïde réel possible, conclusion sur la suffisance du monoculaire.
-
-## Phase 7 · Correction de réfraction (2–3 jours)
-
-- Rayons déviés aux interfaces air/verre/fluide (Snell-Descartes) → biais de position.
-- Option simple : calibration directe dans le fluide (grille immergée) → on « apprend » la déformation plutôt que la modéliser.
-- Option propre : modèle géométrique multi-interfaces, correction par frame.
-
-## Phase 8 · Filtrage (2 jours)
-
-- Filtre de Kalman 1D par axe (position, vitesse, angle) : lissage + interpolation des trous.
-- Ne filtrer qu'**après** validation — sinon on risque d'effacer le signal faible qu'on cherche.
-
-## Phase 9 · Stéréovision (1 semaine) — si nécessaire
-
-- 2 caméras synchronisées : `stereoCalibrate` (intrinsèques + rotation/translation relatives).
-- Triangulation : `cv2.triangulatePoints` → position 3D complète.
-
-## Phase 10 · Pose 3D complète (1 semaine)
-
-- `cv2.solvePnP` sur 4+ marqueurs → attitude 3D complète de la particule.
-- Nécessaire seulement si le couplage doit être observé en 3D (couplage isotrope → toutes orientations).
-
-## Phase 11 · Extraction du couplage (1 semaine)
-
-- Régression θ(t) vs trajectoire x(t) : la pente estimate le couplage translation-rotation.
-- Quantification d'incertitudes : bootstrap sur les répétitions de chutes (n ≥ 10).
-- Comparaison aux prédictions théoriques des codes MATLAB des encadrants.
-
-## Phase 12 · Documentation & livrable (en continu)
-
-- README, docstrings, notebooks de démo reproductibles.
-- Structure du livrable 3 : `code/ + data/ traitée + figures + scripts reproductibles`.
-
-## Règles de développement
-
-1. **Simple d'abord** : aucune phase avancée avant validation de la précédente.
-2. Un module = une responsabilité (calibration, détection, tracking, reconstruction, analyse).
-3. Tout fichier de sortie est reproductible depuis les données brutes + le code versionné.
-4. Tests systématiques sur cas contrôlés avant toute donnée réelle.
 
 ## Contributeurs
 
