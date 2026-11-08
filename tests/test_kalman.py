@@ -43,3 +43,25 @@ def test_mesure_aberrante_rejetee():
 def test_rien_a_suivre():
     tr = KalmanTracker(30.0)
     assert tr.step([])[0] == "searching"
+
+def test_etat_contient_des_incertitudes_qui_diminuent():
+    t, z, _ = _chute()
+    tr = KalmanTracker(30.0, bounds=(1080, 1920))
+    svy = []
+    for m in z:
+        status, st, _ = tr.step([tuple(m)])
+        svy.append(st["svy"])
+    assert all(s > 0 for s in svy)
+    assert svy[0] > svy[1] > svy[2]          # chaque mesure réduit l'incertitude au début
+    assert svy[-1] < svy[0] / 20             # et elle finit très en dessous de l'initiale
+
+
+def test_nis_renseigne_seulement_si_mesure_utilisee():
+    t, z, _ = _chute()
+    tr = KalmanTracker(30.0, bounds=(1080, 1920))
+    tr.step([tuple(z[0])])
+    assert tr.last_nis is None               # 'init' : pas d'innovation
+    tr.step([tuple(z[1])])
+    assert tr.last_nis is not None and tr.last_nis >= 0
+    tr.step([])                              # mesure absente
+    assert tr.last_nis is None

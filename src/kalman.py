@@ -51,9 +51,12 @@ class ConstantAccelerationKalman:
 
     @property
     def state(self):
+        """Estimation + incertitude (écart-type σ lu sur la diagonale de P)."""
         x = self.x
-        return {"x": x[0], "vx": x[1], "ax": x[2], "y": x[3], "vy": x[4], "ay": x[5]}
-
+        sd = np.sqrt(np.maximum(np.diag(self.P), 0.0))
+        return {"x": x[0], "vx": x[1], "ax": x[2], "y": x[3], "vy": x[4], "ay": x[5],
+                "sx": sd[0], "svx": sd[1], "sax": sd[2],
+                "sy": sd[3], "svy": sd[4], "say": sd[5]}
 
 class KalmanTracker:
     """Suit un objet : prédiction, association par Mahalanobis, gestion des trous.
@@ -64,15 +67,17 @@ class KalmanTracker:
 
     GATE_99 = 9.21   # seuil du chi² à 2 ddl (99 %)
 
-    def __init__(self, fps, bounds=None, max_missed=3, **kf_kwargs):
+    def __init__(self, fps, bounds=None, max_missed=5, **kf_kwargs):
         self.kf = ConstantAccelerationKalman(1.0 / fps, **kf_kwargs)
         self.bounds = bounds          # (largeur, hauteur) de l'image
         self.max_missed = max_missed
         self.active = False
         self.missed = 0
+        self.last_nis = None
 
     def step(self, measurements):
         """measurements : liste de (x, y). Renvoie (statut, état|None, indice_mesure|None)."""
+        self.last_nis = None
         if not self.active:
             if not measurements:
                 return "searching", None, None
@@ -88,6 +93,7 @@ class KalmanTracker:
             if d2[best] < self.GATE_99:
                 used = best
         if used is not None:
+            self.last_nis = d2[used]
             self.kf.update(measurements[used])
             self.missed = 0
             return "ok", self.kf.state, used

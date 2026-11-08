@@ -1,18 +1,25 @@
+import shutil
 from pathlib import Path
 
 import numpy as np
 import pytest
-from src.pipeline import process_video
+from src.pipeline import process_folder, process_video
+from src.video_processing import list_videos
 
-VIDEO = Path("data/raw/test.mp4")
-pytestmark = pytest.mark.skipif(not VIDEO.exists(), reason="data/raw/test.mp4 absent")
+RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
+VIDEO = RAW / "test.mp4"
+needs_test_video = pytest.mark.skipif(not VIDEO.exists(), reason="data/raw/test.mp4 absent")
+needs_videos = pytest.mark.skipif(not RAW.is_dir() or not list_videos(RAW),
+                                  reason="aucune vidéo dans data/raw")
 
 
 @pytest.fixture(scope="module")
 def df(tmp_path_factory):
-    return process_video(VIDEO, tmp_path_factory.mktemp("res"), mode="color")
+    return process_video(VIDEO, tmp_path_factory.mktemp("res"), mode="color", write_video=False)
 
 
+# ---- vidéo de référence (data/raw/test.mp4) --------------------------------
+@needs_test_video
 def test_objet_suivi_uniquement_quand_visible(df):
     assert len(df) == 33
     suivi = df[df.status.isin(["init", "ok"])]
@@ -21,11 +28,48 @@ def test_objet_suivi_uniquement_quand_visible(df):
     assert df.loc[df.frame >= 11, "x"].isna().all()               # ni main ni ombre
 
 
+@needs_test_video
 def test_il_tombe_de_plus_en_plus_vite(df):
     vy = df.loc[df.status == "ok", "vy"].to_numpy()
     assert np.all(vy > 0) and np.all(np.diff(vy) > 0)
 
 
+@needs_test_video
 def test_acceleration_coherente(df):
     ay = df.loc[df.status == "ok", "ay"].iloc[1:]   # on écarte la 1re (filtre pas convergé)
     assert 20000 < ay.mean() < 45000                 # ordre de grandeur mesuré : ~30 000 px/s²
+
+
+@needs_test_video
+def test_colonnes_d_analyse_presentes(df):
+    for c in ("t_rel", "resid_x", "resid_y", "sx", "svy", "say", "nis", "diameter_px"):
+        assert c in df.columns
+    ok = df[df.status == "ok"]
+    assert (ok.svy > 0).all() and ok.nis.notna().all()
+    assert df.loc[df.status != "ok", "resid_x"].isna().all()      # résidus seulement sur les 'ok'
+    assert df.loc[df.status == "init", "vy"].isna().all()         # vitesse inconnue au 1er point
+
+
+# ---- traitement du dossier -------------------------------------------------
+@needs_videos
+def test_analyse_du_dossier_raw(tmp_path):
+    summary, dfs = process_folder(RAW, tmp_path, write_video=False)
+    assert len(summary) == len(list_videos(RAW))
+    glob = tmp_path / "_global"
+    assert (glob / "resume_videos.csv").exists() and (glob / "analyse_globale.png").exists()
+    for nom in dfs:
+        assert (tmp_path / nom / "analysis.png").exists()
+        assert (tmp_path / nom / "trajectory.csv").exists()
+    assert (summary.loc[summary.qualite == "ok", "n_ok"] >= 4).all()
+
+
+@needs_test_video
+def test_une_video_corrompue_n_arrete_pas_les_autres(tmp_path):
+    dossier = tmp_path / "raw"
+    dossier.mkdir()
+    shutil.copy(VIDEO, dossier / "bonne.mp4")
+    (dossier / "corrompue.mp4").write_text("pas une video")
+    summary, dfs = process_folder(dossier, tmp_path / "out", write_video=False)
+    assert list(dfs) == ["bonne"]
+    assert summary.set_index("video").loc["corrompue", "qualite"].startswith("erreur")
+    assert summary.set_index("video").loc["bonne", "qualite"] == "ok"

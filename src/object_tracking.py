@@ -15,6 +15,12 @@ class Detection:
     cy: float
     area: float
     contour: np.ndarray
+    bbox: tuple = (0, 0, 0, 0)      # (x, y, largeur, hauteur) en px
+
+    @property
+    def diameter(self):
+        """Diamètre du disque de même aire (px) : indicateur de taille / de flou."""
+        return float(np.sqrt(4.0 * self.area / np.pi))
 
 
 def _clean_mask(mask, kernel_size):
@@ -30,7 +36,7 @@ def _detections_from_mask(mask, min_area):
         m = cv2.moments(c)
         if m["m00"] < min_area:
             continue
-        out.append(Detection(m["m10"] / m["m00"], m["m01"] / m["m00"], m["m00"], c))
+        out.append(Detection(m["m10"] / m["m00"], m["m01"] / m["m00"], m["m00"], c, cv2.boundingRect(c)))
     return sorted(out, key=lambda d: -d.area)   # le plus gros d'abord
 
 
